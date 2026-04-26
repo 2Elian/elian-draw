@@ -1,4 +1,16 @@
-# Go Backend for next-ai-draw-io
+# Elian-Draw: Go Backend for next-ai-draw-io
+
+---
+
+<div align="center">
+在线网址：https://elian.net.cn
+
+<p align="center">
+  <img src="images/elian-dra-framework.svg" alt="https://elian.net.cn/products/elian-draw" width="800"/>
+</p>
+</div>
+
+---
 
 Go backend replacement for the Next.js API routes, using Gin framework.
 

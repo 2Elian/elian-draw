@@ -2,5 +2,6 @@ bin/
 data/
 *.exe
 .env
+.idea/
 .env.local
 docs/
