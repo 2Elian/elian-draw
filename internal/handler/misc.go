@@ -30,11 +30,11 @@ func HandleConfig(c *gin.Context) {
 	cfg := config.AppConfig
 
 	c.JSON(http.StatusOK, gin.H{
-		"hasApiKey":         cfg.AIModel != "",
-		"provider":          string(cfg.AIProvider),
-		"model":             cfg.AIModel,
-		"hasAccessCode":     len(cfg.AccessCodeList) > 0,
-		"enablePdfInput":    cfg.EnablePDFInput,
+		"hasApiKey":      cfg.AIModel != "",
+		"provider":       string(cfg.AIProvider),
+		"model":          cfg.AIModel,
+		"hasAccessCode":  len(cfg.AccessCodeList) > 0,
+		"enablePdfInput": cfg.EnablePDFInput,
 	})
 }
 
@@ -151,23 +151,24 @@ func HandleValidateModel(c *gin.Context) {
 }
 
 // ValidateFileParts validates file parts in messages
-func ValidateFileParts(messages []model.UIMessage) (bool, string) {
+// 验证聊天消息中的文件附件是否符合规范
+func ValidateFileParts(messages []model.UIMessage) (bool, string) { // 第一个返回值表示是否验证通过，第二个返回错误描述
 	if len(messages) == 0 {
 		return true, ""
 	}
 
-	lastMsg := messages[len(messages)-1]
-	var fileCount int
+	lastMsg := messages[len(messages)-1] // 获取最后一条消息 --> 函数只检查最后一条消息中的文件附件，即当前session内用户最近一次的交互聊天
+	var fileCount int                    // 默认为0
 	for _, part := range lastMsg.Parts {
 		if part.Type == "file" {
 			fileCount++
 			// Check file size (base64 encoded)
-			if part.URL != "" && strings.HasPrefix(part.URL, "data:") {
-				parts := strings.SplitN(part.URL, ",", 2)
+			if part.URL != "" && strings.HasPrefix(part.URL, "data:") { // example: part.URL="data:[<mediatype>][;base64],<data>" 则这个为true 否则为false
+				parts := strings.SplitN(part.URL, ",", 2) //[<mediatype>][;base64]
 				if len(parts) == 2 {
-					decodedSize := int(math.Ceil(float64(len(parts[1])) * 3 / 4))
+					decodedSize := int(math.Ceil(float64(len(parts[1])) * 3 / 4)) // 提取 Base64 编码的数据部分
 					if decodedSize > 2*1024*1024 {
-						return false, "File exceeds 2MB limit."
+						return false, "File exceeds 2MB limit." //若解码后大小超过 2MB，返回失败及错误信息
 					}
 				}
 			}
@@ -175,7 +176,7 @@ func ValidateFileParts(messages []model.UIMessage) (bool, string) {
 	}
 
 	if fileCount > 5 {
-		return false, "Too many files. Maximum 5 allowed."
+		return false, "Too many files. Maximum 5 allowed." // 限制文件数量不能大于5个，不然后端处理起来困难
 	}
 
 	return true, ""

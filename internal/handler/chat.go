@@ -19,31 +19,26 @@ import (
 // HandleChat handles POST /api/chat - the core chat endpoint
 func HandleChat(c *gin.Context) {
 	cfg := config.AppConfig
-
-	// === Step 1: Parse request body ===
 	var req model.ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	// Truncate custom system message
 	if len(req.CustomSystemMessage) > 5000 {
 		req.CustomSystemMessage = req.CustomSystemMessage[:5000]
 	}
 
-	// Validate session ID
 	sessionID := req.SessionID
 	if sessionID == "" || len(sessionID) > 200 {
 		sessionID = ""
 	}
 
-	// === Step 2: Extract user input ===
 	var userInputText string
 	for i := len(req.Messages) - 1; i >= 0; i-- {
 		if req.Messages[i].Role == "user" {
 			for _, part := range req.Messages[i].Parts {
-				if part.Type == "text" {
+				if part.Type == "text" { // 如果是纯文本 后面没有必要遍历了
 					userInputText = part.Text
 					break
 				}
@@ -55,14 +50,12 @@ func HandleChat(c *gin.Context) {
 	log.Printf("[Chat] User input: %q (messages: %d, session: %s)",
 		truncate(userInputText, 100), len(req.Messages), sessionID)
 
-	// === Step 3: File validation ===
 	if valid, errMsg := ValidateFileParts(req.Messages); !valid {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
-
-	// === Step 4: Cache check ===
-	if len(req.Messages) == 1 && agent.IsMinimalDiagram(req.XML) {
+	// cache logic
+	if len(req.Messages) == 1 && agent.IsMinimalDiagram(req.XML) { // 新对话的第一条请求
 		textPart := ""
 		var hasFile bool
 		for _, part := range req.Messages[0].Parts {
@@ -74,16 +67,15 @@ func HandleChat(c *gin.Context) {
 			}
 		}
 		if cached := util.FindCachedResponse(textPart, hasFile); cached != nil {
-			writeCachedResponse(c, cached.XML)
+			writeCachedResponse(c, cached.XML) // 将缓存以 SSE 流式响应输出
 			return
 		}
 	}
 
-	// === Step 5: Read client AI provider overrides ===
+	// 初始化AI Model
 	selectedModelID := c.GetHeader("x-selected-model-id")
 	providerHeader := c.GetHeader("x-ai-provider")
 	baseURLHeader := c.GetHeader("x-ai-base-url")
-
 	// Handle server model lookup
 	var serverModelConfig *config.FlattenedServerModel
 	if strings.HasPrefix(selectedModelID, "server:") {
@@ -92,7 +84,6 @@ func HandleChat(c *gin.Context) {
 			log.Printf("[Server Model] ID: %s, Provider: %s", selectedModelID, serverModelConfig.Provider)
 		}
 	}
-
 	overrides := &model.ClientOverrides{
 		Provider: func() config.ProviderName {
 			if serverModelConfig != nil {
@@ -100,24 +91,20 @@ func HandleChat(c *gin.Context) {
 			}
 			return config.ProviderName(providerHeader)
 		}(),
-		BaseURL:          baseURLHeader,
-		APIKey:           c.GetHeader("x-ai-api-key"),
-		ModelID:          c.GetHeader("x-ai-model"),
-		AWSAccessKeyID:   c.GetHeader("x-aws-access-key-id"),
+		BaseURL:            baseURLHeader,
+		APIKey:             c.GetHeader("x-ai-api-key"),
+		ModelID:            c.GetHeader("x-ai-model"),
+		AWSAccessKeyID:     c.GetHeader("x-aws-access-key-id"),
 		AWSSecretAccessKey: c.GetHeader("x-aws-secret-access-key"),
-		AWSRegion:        c.GetHeader("x-aws-region"),
-		AWSSessionToken:  c.GetHeader("x-aws-session-token"),
-		VertexAPIKey:     c.GetHeader("x-vertex-api-key"),
+		AWSRegion:          c.GetHeader("x-aws-region"),
+		AWSSessionToken:    c.GetHeader("x-aws-session-token"),
+		VertexAPIKey:       c.GetHeader("x-vertex-api-key"),
 	}
-
 	if serverModelConfig != nil {
 		overrides.APIKeyEnvs = serverModelConfig.APIKeyEnv
 		overrides.BaseURLEnv = serverModelConfig.BaseURLEnv
 	}
-
 	minimalStyle := c.GetHeader("x-minimal-style") == "true"
-
-	// === Step 6: Get AI model ===
 	modelCfg, err := provider.GetAIModel(overrides)
 	if err != nil {
 		log.Printf("[Chat] Model init error: %v", err)
@@ -127,13 +114,12 @@ func HandleChat(c *gin.Context) {
 
 	log.Printf("[Chat] Provider: %s, Model: %s", modelCfg.Provider, modelCfg.ModelID)
 
-	// === Step 7: System prompt ===
+	// build Prompt
 	systemPrompt := agent.GetSystemPrompt(modelCfg.ModelID, minimalStyle)
 	if req.CustomSystemMessage != "" {
 		systemPrompt = systemPrompt + "\n\n## Custom Instructions\n" + req.CustomSystemMessage
 	}
-
-	// === Step 8: Image input validation ===
+	// 对image进行验证
 	var fileParts []model.UIPart
 	for i := len(req.Messages) - 1; i >= 0; i-- {
 		if req.Messages[i].Role == "user" {
@@ -153,10 +139,8 @@ func HandleChat(c *gin.Context) {
 		return
 	}
 
-	// === Step 9: Convert messages ===
 	modelMessages := agent.ConvertUIMessagesToModelMessages(req.Messages)
 
-	// Replace historical XML
 	if cfg.EnableHistoryReplace {
 		modelMessages = agent.ReplaceHistoricalToolInputs(modelMessages)
 	}
@@ -190,12 +174,12 @@ func HandleChat(c *gin.Context) {
 		}
 	}
 
-	// === Step 10: Build system messages ===
+	// Build system messages
 	xmlContext := agent.BuildXMLContext(req.XML, req.PreviousXML)
 	shouldCache := config.SupportsPromptCaching(modelCfg.ModelID)
 	systemMessages := agent.BuildSystemMessages(systemPrompt, xmlContext, modelCfg.Provider, shouldCache)
 
-	// === Step 11: Run agent loop ===
+	//  Run agent loop
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")

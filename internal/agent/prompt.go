@@ -13,14 +13,16 @@ import (
 var (
 	defaultPrompt     string
 	extendedPrompt    string
-	styleInstructions string
-	minimalStyleInstr string
-	promptsOnce       sync.Once
+	styleInstructions string    // 风格指令，例如“用友好语气回复”、“输出JSON格式”等
+	minimalStyleInstr string    // 精简风格指令，将去除掉所有颜色和样式只保留黑白
+	promptsOnce       sync.Once // 确保 loadPrompts 中的初始化逻辑只执行一次，无论被多少个 goroutine 并发调用
 )
 
 func loadPrompts() {
 	promptsOnce.Do(func() {
 		// Try to load from prompts/ directory, fall back to embedded defaults
+		// 尝试从 prompts/ 目录加载，否则使用下面传入的默认字符串
+		// TODO: 将prompt写入txt里面
 		defaultPrompt = loadPromptFile("prompts/system_default.txt", defaultSystemPrompt)
 		extendedPrompt = loadPromptFile("prompts/system_extended.txt", defaultSystemPrompt+extendedAdditions)
 		styleInstructions = loadPromptFile("prompts/style.txt", styleInstructionsDefault)
@@ -47,6 +49,7 @@ func GetSystemPrompt(modelID string, minimalStyle bool) string {
 
 	var prompt string
 	// Use extended prompt for Opus/Haiku 4.5
+	// TODO why need to use extendedPrompt for Opus/Haiku 4.5?
 	if modelID != "" && (strings.Contains(modelID, "claude-opus-4-5") || strings.Contains(modelID, "claude-haiku-4-5")) {
 		prompt = extendedPrompt
 	} else {
@@ -59,13 +62,13 @@ func GetSystemPrompt(modelID string, minimalStyle bool) string {
 		prompt += styleInstructions
 	}
 
-	return strings.ReplaceAll(prompt, "{{MODEL_NAME}}", modelName)
+	return strings.ReplaceAll(prompt, "{{MODEL_NAME}}", modelName) // 将变量 prompt（一个字符串）中 所有出现 的占位符 "{{MODEL_NAME}}" 替换为变量 modelName 的值，并返回替换后的新字符串。
 }
 
 // BuildXMLContext builds the XML context string from current and previous diagram XML
 func BuildXMLContext(xml, previousXML string) string {
 	var sb strings.Builder
-
+	// TODO: 工具以及这些xml都写成: <xml> </xml>的xml形式
 	if previousXML != "" {
 		sb.WriteString("Previous diagram XML (before user's last message):\n")
 		sb.WriteString("\"\"\"xml\n")

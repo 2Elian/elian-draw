@@ -27,7 +27,9 @@ func CORSMiddleware() gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
-
+		/*
+			遇到 c.Next()：代码会“暂停”当前中间件的执行，跳去执行下一个中间件，等后面所有的逻辑都跑完了，再回到 c.Next() 下面继续执行（如果有的话）。
+		*/
 		c.Next()
 	}
 }
